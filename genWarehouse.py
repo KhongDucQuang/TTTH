@@ -1,96 +1,97 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import time
+
 # ===========================================================
-# Sinh môi trường warehouse 
+# Sinh môi trường warehouse (CỬA ĐÃ ĐƯỢC MỞ RỘNG)
 # ===========================================================
 def generate_warehouse_scenario():
-    """
-    Tạo bản đồ warehouse theo hình mẫu với các khu vực A-G
-    """
     env = {}
     env["width"], env["height"] = 900, 500
+    WALL_THICKNESS = 5
+
+    # === CẤU HÌNH CỬA RỘNG HƠN (GAP ~ 60-80 đơn vị) ===
+    # Để robot có safety_margin=20 (đường kính 40) đi lọt dễ dàng
     
-    # Định nghĩa các khu vực chứa hàng (obstacles)
-    # Format: [x_min, y_min, width, height, name]
-    env["obstacles_rect"] = [
-        [500, 320, 170, 130, 'A'],  # Area A (phía trên giữa)
-        [500, 130, 250, 120, 'B'],  # Area B (giữa)
-        [500, 10, 250, 100, 'C'],   # Area C (dưới)
-        [800, 310, 100, 190, 'D'],  # Area D (phía trên bên phải)
-        [800, 190, 100, 110, 'E'],  # Area E (giữa bên phải)
-        [750, 10, 150, 70, 'F'],    # Area F (dưới bên phải)
+    env["walls_rect"] = [
+        # Tường bao
+        [0, 0, WALL_THICKNESS, 500],
+        [900 - WALL_THICKNESS, 0, WALL_THICKNESS, 500],
+        [0, 0, 900, WALL_THICKNESS],
+        [0, 500 - WALL_THICKNESS, 900, WALL_THICKNESS],
+
+        # === Area A (Cửa dưới) ===
+        [450, 325, WALL_THICKNESS, 175], # Trái
+        [650, 325, WALL_THICKNESS, 175], # Phải
+        [450, 325, 600 - 450, WALL_THICKNESS], # Dưới (Cửa rộng 50: 600->650)
+
+        # === Area B (Cửa phải) ===
+        [450, 125, WALL_THICKNESS, 125], # Trái
+        # Cửa phải mở rộng: Tường từ 125->200 (Hở 200->250)
+        [680, 125, WALL_THICKNESS, 200 - 125], 
+        [450, 125, 230, WALL_THICKNESS], # Dưới
+        [450, 250, 230, WALL_THICKNESS], # Trên
+
+        # === Area C (Cửa phải) ===
+        [450, 0, WALL_THICKNESS, 125], # Trái
+        # Cửa phải mở rộng: Tường từ 0->60 (Hở 60->125)
+        [680, 0, WALL_THICKNESS, 60], 
+
+        # === Area D (Cửa trái) ===
+        # Cửa trái mở rộng: Tường từ 325->380 (Hở 380->450)
+        [750, 325, WALL_THICKNESS, 380 - 325],
+        [750, 325, 150, WALL_THICKNESS], # Dưới
+        [750, 450, 150, WALL_THICKNESS], # Trên
+
+        # === Area E (Cửa trái) ===
+        # Cửa trái mở rộng: Tường từ 200->260 (Hở 260->325)
+        [750, 200, WALL_THICKNESS, 260 - 200],
+        [750, 200, 150, WALL_THICKNESS], # Dưới
+
+        # === Area F (Cửa trái - ĐIỂM ĐẾN) ===
+        # Cửa trái mở rộng: Tường từ 0->140 (Hở 140->200) - Rộng 60 đơn vị
+        [750, 0, WALL_THICKNESS, 140],
     ]
-    
-    # Area G (khu trống) - chỉ để vẽ, không phải obstacle
-    env["area_g"] = [50, 50, 400, 400, 'G']
-    
-    # Điểm start và goal
-    env["start"] = np.array([50, 450])   # Góc trên bên trái
-    env["goal"] = np.array([850, 50])    # Góc dưới bên phải
-    
-    env["n_waypoints"] = 6
-    env["safety_margin"] = 15
-    env["weights"] = np.array([1.0, 0.5, 100.0])  # length, smoothness, collision
-    
+
+    env["area_labels"] = [
+        {'name': 'A', 'pos': (550, 415)},
+        {'name': 'B', 'pos': (565, 188)},
+        {'name': 'C', 'pos': (565, 63)},
+        {'name': 'D', 'pos': (825, 388)},
+        {'name': 'E', 'pos': (825, 263)},
+        {'name': 'F', 'pos': (825, 100)},
+        {'name': 'G', 'pos': (225, 250)},
+    ]
+
+    env["start"] = np.array([50, 250])
+    env["goal"] = np.array([825, 100]) 
+
+    env["n_waypoints"] = 300 # Tăng số điểm để đường đi mềm dẻo hơn
+    env["safety_margin_soft"] = 30.0
+    env["safety_margin_hard"] = 15.0 # Giữ margin 15, cửa rộng 60 là đi lọt
+
+    # Trọng số: Ưu tiên độ dài và an toàn
+    env["weights"] = np.array([2.0, 20.0, 200000.0, 0.0]) 
+
     return env
 
-def plot_warehouse_map(env, show_grid=True):
-    """
-    Vẽ bản đồ warehouse scenario
-    """
+def plot_warehouse_map(env, show_grid=False):
     fig, ax = plt.subplots(figsize=(12, 7))
     ax.set_xlim(0, env["width"])
     ax.set_ylim(0, env["height"])
-    ax.set_xlabel('X (cm)', fontsize=11)
-    ax.set_ylabel('Y (cm)', fontsize=11)
-    ax.set_title('Warehouse Scenario', fontsize=14, fontweight='bold')
     
-    # Vẽ Area G (khu trống) - chỉ đường viền
-    if 'area_g' in env:
-        x, y, w, h, name = env["area_g"]
-        rect = patches.Rectangle((x, y), w, h, linewidth=2, 
-                                 edgecolor='black', facecolor='none')
+    for wall_data in env["walls_rect"]:
+        x, y, w, h = wall_data
+        rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='black', facecolor='darkslategrey')
         ax.add_patch(rect)
-        ax.text(x + w/2, y + h/2, f'Area {name}', 
-               ha='center', va='center', fontsize=13, color='blue')
+
+    for label_info in env["area_labels"]:
+        ax.text(label_info['pos'][0], label_info['pos'][1], f"Area {label_info['name']}", 
+                ha='center', color='blue', fontweight='bold')
+
+    if show_grid: ax.grid(True, alpha=0.3)
+    if "start" in env: ax.plot(*env["start"], 'go', ms=10, label='Start')
+    if "goal" in env: ax.plot(*env["goal"], 'ro', ms=10, label='Goal')
     
-    # Vẽ các khu vực chứa hàng (obstacles)
-    for obs_data in env["obstacles_rect"]:
-        x, y, w, h, name = obs_data
-        
-        # Vẽ hình chữ nhật
-        rect = patches.Rectangle((x, y), w, h, linewidth=2, 
-                                 edgecolor='black', facecolor='lightgray', alpha=0.5)
-        ax.add_patch(rect)
-        
-        # Vẽ đường viền safety margin (nét đứt)
-        margin = env["safety_margin"]
-        safety_rect = patches.Rectangle((x - margin, y - margin), 
-                                        w + 2*margin, h + 2*margin, 
-                                        linewidth=1, edgecolor='orange', 
-                                        facecolor='yellow', linestyle='--', alpha=0.2)
-        ax.add_patch(safety_rect)
-        
-        # Thêm tên khu vực
-        ax.text(x + w/2, y + h/2, f'Area {name}', 
-               ha='center', va='center', fontsize=13, color='blue', fontweight='bold')
-    
-    # Vẽ lưới các điểm (dots) giống hình mẫu
-    if show_grid:
-        grid_x = np.arange(50, env["width"], 50)
-        grid_y = np.arange(50, env["height"], 50)
-        for gx in grid_x:
-            for gy in grid_y:
-                ax.plot(gx, gy, 'k.', markersize=2)
-    
-    # Vẽ start và goal
-    ax.plot(*env["start"], 'go', markersize=14, label='Start', zorder=10)
-    ax.plot(*env["goal"], 'ro', markersize=14, label='Goal', zorder=10)
-    
-    ax.legend(loc='upper left', fontsize=11)
-    ax.set_aspect('equal')
     plt.tight_layout()
-    plt.grid(False)
     plt.show()

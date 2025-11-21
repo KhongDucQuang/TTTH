@@ -1,60 +1,57 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import time
-from genWarehouse import generate_warehouse_scenario, plot_warehouse_map
-from costFuncAndUtilities import collision_cost, cost_function, smoothness_cost, path_length, perturb_path, random_path, interpolate_path
+from costFuncAndUtilities import cost_function, perturb_path, random_path
 
-
-# ===========================================================
-# Simulated Annealing
-# ===========================================================
 def sa_pathplanning(env, params):
-    T0 = params.get("T0", 2000.0)
+    # Lấy tham số nhiệt độ
+    T0 = params.get("T0", 100.0) # Nhiệt độ thấp thôi
     T = T0
-    Tmin = params.get("Tmin", 0.1)
-    alpha = params.get("alpha", 0.96)
-    max_iter_per_temp = params.get("max_iter_per_temp", 40)
+    Tmin = params.get("Tmin", 0.01)
+    alpha = params.get("alpha", 0.95)
+    max_iter_per_temp = params.get("max_iter_per_temp", 50)
     
-    # Khởi tạo với nhiều lần thử
-    best_init_cost = float('inf')
-    for _ in range(10):
-        candidate = random_path(env)
-        candidate_cost = cost_function(candidate, env)
-        if candidate_cost < best_init_cost:
-            current = candidate
-            current_cost = candidate_cost
-            best_init_cost = candidate_cost
+    # Khởi tạo đường đi (Sử dụng random_path thông minh từ costFuncAndUtilities)
+    current = random_path(env)
+    current_cost = cost_function(current, env)
     
     best, best_cost = current.copy(), current_cost
-    no_improve_count = 0
     
     iter_count = 0
+    start_time = time.time()
+    
     while T > Tmin:
-        improved_this_temp = False
         for _ in range(max_iter_per_temp):
-            scale = 60 * (T / T0) + 10
-            new = perturb_path(current, env, scale)
-            new_cost = cost_function(new, env)
+            # === ĐÂY LÀ DÒNG CẦN SỬA ===
+            # Trước đây: scale = 150 * (T / T0) + 10  (QUÁ LỚN)
+            # Bây giờ: scale giảm dần từ 5.0 xuống 0.5
+            # Mục đích: Chỉ rung nhẹ để làm mượt đường cong
+            scale = 5.0 * (T / T0) + 0.5
             
+            # Tạo đường đi mới bằng cách rung nhẹ
+            new_waypoints = perturb_path(current, env, scale)
+            new_cost = cost_function(new_waypoints, env)
+            
+            # Tính chênh lệch năng lượng
             delta = new_cost - current_cost
-            if delta < 0 or np.random.rand() < np.exp(-delta / T):
-                current, current_cost = new.copy(), new_cost
-                if new_cost < best_cost:
-                    best, best_cost = new.copy(), new_cost
-                    improved_this_temp = True
-                    no_improve_count = 0
-        
-        if not improved_this_temp:
-            no_improve_count += 1
-        
-        if no_improve_count > 20:
-            print(f"SA early stopping at T={T:.2f}")
-            break
             
+            # Chấp nhận nếu tốt hơn HOẶC chấp nhận xác suất nếu tệ hơn
+            if delta < 0 or np.random.rand() < np.exp(-delta / T):
+                current, current_cost = new_waypoints.copy(), new_cost
+                
+                # Cập nhật Best Solution
+                if new_cost < best_cost:
+                    best, best_cost = new_waypoints.copy(), new_cost
+                    # In ra để theo dõi tiến độ (Optional)
+                    # print(f"  >> New Best SA: {best_cost:.2f}")
+        
+        # Giảm nhiệt độ
         T *= alpha
         iter_count += 1
+        
+        # In log mỗi 10 vòng nhiệt độ
         if iter_count % 10 == 0:
-            print(f"SA Iter {iter_count}: T={T:.2f}, best_cost={best_cost:.2f}")
-    
-    return best, best_cost
+            print(f"SA Iter {iter_count}: T={T:.2f}, Scale={scale:.2f}, Cost={best_cost:.2f}")
+
+    # Trả về kết quả đầy đủ (Start + Waypoints + Goal)
+    full_path = np.vstack([env["start"], best, env["goal"]])
+    return full_path, best_cost
