@@ -136,7 +136,7 @@ def bfs_init_path(env):
             path_indices = path
             found = True
             break
-            
+
         for dx, dy in moves:
             nx, ny = cx + dx, cy + dy
             if (nx, ny) not in visited and not bg.is_wall(nx, ny):
@@ -165,15 +165,15 @@ def bfs_init_path(env):
 
 def random_path(env):
     """
-    Hàm khởi tạo được gọi bởi PSO/SA.
-    Tạo ra một đường đi hợp lệ + Nhiễu ngẫu nhiên.
+    Hàm khởi tạo: TẠO RA ĐƯỜNG ĐI 'XẤU' ĐỂ THỬ THÁCH THUẬT TOÁN
     """
-    # 1. Lấy khung đường đi hợp lệ từ BFS
+    # 1. Lấy khung xương từ BFS (đảm bảo không đâm tường)
     base_waypoints = bfs_init_path(env)
     
-    # 2. Thêm nhiễu (Randomness) để tạo quần thể đa dạng cho PSO
-    # Nhiễu khoảng 10-20cm để các hạt khác nhau
-    noise = np.random.normal(0, 5.0, base_waypoints.shape)
+    # 2. Thêm nhiễu MẠNH (Heavy Noise)
+    # Mục đích: Tạo ra đường ziczac, gồ ghề để thuật toán phải tự nắn thẳng
+    # Scale lớn: 15.0 cm (Trước đây là 2.0 cm)
+    noise = np.random.normal(0, 15.0, base_waypoints.shape) 
     waypoints = base_waypoints + noise
     
     # Clip để không văng ra ngoài map
@@ -186,59 +186,35 @@ def random_path(env):
 # 3. COST FUNCTION - THEO CÔNG THỨC BÀI BÁO
 # =========================================================
 
-def check_collision_rect_fast(pts, walls, margin):
-    """Kiểm tra va chạm nhanh cho mảng điểm."""
-    for x, y, w, h in walls:
-        # Vector hóa check: Tìm các điểm nằm trong HCN mở rộng
-        mask = (pts[:,0] >= x - margin) & (pts[:,0] <= x + w + margin) & \
-               (pts[:,1] >= y - margin) & (pts[:,1] <= y + h + margin)
-        if np.any(mask): return True
-    return False
-
 def cost_function(waypoints, env):
-    # Ghép điểm Start/Goal vào
     full_path = np.vstack([env["start"], waypoints, env["goal"]])
     
-    # QUAN TRỌNG: Tạo đường cong B-Spline để đánh giá
-    # Bài báo tối ưu trên đường cong, không phải đường gấp khúc
+    # Tạo B-Spline
     bspline = generate_bspline_path(full_path, n_points=100, degree=3)
     
-    # Trọng số (Theo bài báo thường ưu tiên An toàn > Mượt > Ngắn)
     weights = env.get("weights", [1.0, 10.0, 100000.0, 0.0])
     w_len, w_smooth, w_coll, w_dist = weights
     
-    # 1. Cost Va chạm (Collision) - Penalty Method
-    # Margin cứng = 15cm
+    # Check va chạm
     c_coll = 0
     margin = env.get("safety_margin_hard", 15.0)
     walls = env["walls_rect"]
     
-    # Check từng điểm trên B-spline
     for p in bspline:
-        # Check biên map
-        if p[0] < margin or p[0] > env["width"]-margin or p[1] < margin or p[1] > env["height"]-margin:
-             c_coll += 1
-             continue
-        # Check tường
-        hit = False
+        if p[0]<margin or p[0]>env["width"]-margin or p[1]<margin or p[1]>env["height"]-margin:
+             c_coll += 1; continue
         for wx, wy, ww, wh in walls:
-            if (p[0] >= wx - margin and p[0] <= wx + ww + margin and
-                p[1] >= wy - margin and p[1] <= wy + wh + margin):
-                c_coll += 1
-                hit = True
-                break
+            if (p[0] >= wx-margin and p[0] <= wx+ww+margin and
+                p[1] >= wy-margin and p[1] <= wy+wh+margin):
+                c_coll += 1; break
     
-    # Nếu va chạm -> Phạt cực nặng (Exponential Penalty)
     if c_coll > 0:
-        return 1e6 * c_coll # 1 triệu điểm phạt mỗi lần chạm
+        return 1e9 + c_coll * 10000
         
-    # 2. Cost Độ dài (Length)
     c_len = np.sum(np.linalg.norm(np.diff(bspline, axis=0), axis=1))
     
-    # 3. Cost Độ mượt (Smoothness) - Tổng thay đổi góc
     slopes = np.diff(bspline, axis=0)
     norms = np.linalg.norm(slopes, axis=1)
-    # Tránh chia cho 0
     valid = norms > 1e-6
     if np.sum(valid) >= 2:
         slopes = slopes[valid] / norms[valid, None]
@@ -250,10 +226,14 @@ def cost_function(waypoints, env):
     return w_len * c_len + w_smooth * c_smooth
 
 def perturb_path(waypoints, env, scale=1.0):
-    """Hàm rung lắc cho SA"""
+    """
+    SA Rung lắc:
+    Dùng scale nhỏ để tinh chỉnh.
+    """
     new_wp = waypoints.copy()
     idx = np.random.randint(0, len(new_wp))
-    new_wp[idx] += np.random.normal(0, scale, 2) # Gaussian noise hay hơn Uniform
+    # Gaussian noise
+    new_wp[idx] += np.random.normal(0, scale, 2)
     
     new_wp[:, 0] = np.clip(new_wp[:, 0], 0, env['width'])
     new_wp[:, 1] = np.clip(new_wp[:, 1], 0, env['height'])

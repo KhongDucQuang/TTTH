@@ -83,11 +83,11 @@ if __name__ == "__main__":
         n_particles=100,
         max_iter=200,
         v_max=1.0,
-        T0=100.0,
+        T0=200.0,
         Tmin=0.01,
         alpha=0.97,
         max_iter_per_temp=50,
-        T0_hybrid=50.0,
+        T0_hybrid=100.0,
         alpha_hybrid=0.97
     )
     

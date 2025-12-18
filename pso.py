@@ -6,9 +6,9 @@ def pso_pathplanning(env, params):
     max_iter = params.get("max_iter", 120)
     w_start, w_end = 0.9, 0.4
     c1, c2 = 2.0, 2.0
-    v_max = params.get("v_max", 25)
+    v_max = params.get("v_max", 2.0) # Velocity nhỏ thôi để không phá vỡ cấu trúc BFS
     
-    # Các biến chỉ chứa waypoints
+    # random_path gọi BFS init -> Rất quan trọng
     positions = [random_path(env) for _ in range(n_particles)]
     velocities = [np.zeros_like(p) for p in positions]
     
@@ -25,7 +25,7 @@ def pso_pathplanning(env, params):
         for i in range(n_particles):
             r1, r2 = np.random.rand(2)
             
-            # Cập nhật vận tốc và vị trí chỉ cho các waypoints
+            # Cập nhật vận tốc
             velocities[i] = (w * velocities[i] + 
                              c1 * r1 * (pbest[i] - positions[i]) + 
                              c2 * r2 * (gbest - positions[i]))
@@ -33,7 +33,7 @@ def pso_pathplanning(env, params):
             velocities[i] = np.clip(velocities[i], -v_max, v_max)
             positions[i] += velocities[i]
             
-            # Clip để waypoints không ra ngoài biên
+            # Kẹp biên map
             positions[i][:, 0] = np.clip(positions[i][:, 0], 0, env["width"])
             positions[i][:, 1] = np.clip(positions[i][:, 1], 0, env["height"])
             
@@ -46,9 +46,8 @@ def pso_pathplanning(env, params):
                     gbest = positions[i].copy()
                     gbest_cost = cost
         
-        if t % 10 == 0:
-            print(f"PSO Iter {t:3d}: best_cost={gbest_cost:.2f}")
+        if t % 20 == 0:
+            print(f"   PSO Iter {t:3d}: Best Cost={gbest_cost:.2f}")
 
-    # Trả về đường đi hoàn chỉnh để vẽ
     full_path = np.vstack([env["start"], gbest, env["goal"]])
     return full_path, gbest_cost
